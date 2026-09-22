@@ -1,0 +1,47 @@
+@OtelDemo_HostAddress = http://localhost:5200
+
+### Root Endpoint
+GET {{OtelDemo_HostAddress}}/
+Accept: text/plain
+
+### Get All Products
+GET {{OtelDemo_HostAddress}}/api/products
+Accept: application/json
+
+### Get Product By ID (Success)
+GET {{OtelDemo_HostAddress}}/api/products/1
+Accept: application/json
+
+### Get Product By ID (Invalid ID - Bad Request)
+GET {{OtelDemo_HostAddress}}/api/products/0
+Accept: application/json
+
+### Create Order (Success)
+POST {{OtelDemo_HostAddress}}/api/orders
+Content-Type: application/json
+
+{
+  "productId": 1,
+  "quantity": 2
+}
+
+### Create Order (Invalid Request - Bad Request)
+POST {{OtelDemo_HostAddress}}/api/orders
+Content-Type: application/json
+
+{
+  "productId": 0,
+  "quantity": 0
+}
+
+### Get Order By ID
+GET {{OtelDemo_HostAddress}}/api/orders/e3b0c442-98fc-11ee-b9d1-0242ac120002
+Accept: application/json
+
+### Trigger Error (Simulates Exception)
+GET {{OtelDemo_HostAddress}}/api/error
+Accept: application/json
+
+### Delayed Response (1 Second Delay)
+GET {{OtelDemo_HostAddress}}/api/delay
+Accept: application/json
