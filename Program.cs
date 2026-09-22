@@ -25,16 +25,9 @@ app.MapGet("/", () =>
 app.MapGet("/api/products", () =>
 {
 
-    using var span = activitySource.StartActivity(
-        "Get products",
-        ActivityKind.Server,
-        StatusCode.Ok.ToString()
-        );
+    using var parentSpan = activitySource.StartActivity("Get products",ActivityKind.Server);
 
-    span?.SetTag("http.status_code", 200);
-    span?.SetTag("http.route", "/api/products");
-
-    span?.AddEvent(new ActivityEvent("products loaded successfly"));
+    using var childSpan = activitySource.StartActivity("load products", ActivityKind.Internal);
 
     var products = new[]
     {
@@ -43,30 +36,34 @@ app.MapGet("/api/products", () =>
         new { Id = 3, Name = "Headphones", Price = 150 }
     };
 
+    parentSpan?.SetStatus(Status.Ok);
     return Results.Ok(products);
 });
 
 app.MapGet("/api/products/{id:int}", (int id) =>
 {
-    using var span = activitySource.StartActivity
-    ("Get product by id", ActivityKind.Internal);
-
-
-
+    using var span = activitySource.StartActivity("get product by id",ActivityKind.Internal,StatusCode.Ok.ToString());
+    span?.SetTag("http.status_code", 200);
+    span?.SetTag("http_route", $"api/products/{id}");
 
     if (id <= 0)
-        throw new Exception("failed to load product");
-
-    span?.AddEvent(new ActivityEvent("not founded any data"));
-
-    var product = new
     {
-        Id = id,
-        Name = $"Product {id}",
-        Price = 100
-    };
+        span?.SetTag("http.status_code", 404);
+        span?.SetStatus(Status.Error);
+        span?.AddEvent(new ActivityEvent($"not found product with id: {id}"));
+        throw new Exception("failed to load product");
+       
+    }
+            
+            
+        
+        var product = new
+        {
+            Id = id,
+            Name = $"Product {id}",
+            Price = 100
+        };
 
-    return Results.Ok(product);
 
 });
 app.MapPost("/api/orders", (OrderRequest request) =>
