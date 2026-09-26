@@ -1,5 +1,7 @@
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,12 +12,24 @@ builder.Services.AddOpenTelemetry()
         .AddSource("DemoApi")
         .SetSampler(new AlwaysOnSampler()) //very important to keep span on
         .AddConsoleExporter();
+    }).WithMetrics(meterProvider=>
+    {
+        meterProvider.AddMeter("DemoApi")
+        .AddConsoleExporter();
     });
 
 
 var app = builder.Build();
 
+// connect to traceProvider and MeterProvider
 var activitySource = new ActivitySource("DemoApi");
+var meter = new Meter("DemoApi");
+
+//create custom metrics
+var request_counter = meter.CreateCounter<long>("api.request", description: "to calaculte number of request", unit: "1");
+
+var request_duration = meter.CreateHistogram<double>("api.request.duration", description: "Api request Duration", unit: "ms");
+
 
 app.MapGet("/", () =>
 {
@@ -25,9 +39,12 @@ app.MapGet("/", () =>
 app.MapGet("/api/products", () =>
 {
 
+    var stopwatch = Stopwatch.StartNew();
     using var parentSpan = activitySource.StartActivity("Get products",ActivityKind.Server);
 
     using var childSpan = activitySource.StartActivity("load products", ActivityKind.Internal);
+ 
+
 
     var products = new[]
     {
@@ -36,12 +53,19 @@ app.MapGet("/api/products", () =>
         new { Id = 3, Name = "Headphones", Price = 150 }
     };
 
+    stopwatch.Stop();
+
+    request_counter.Add(1);
     parentSpan?.SetStatus(Status.Ok);
+
+    request_duration.Record(stopwatch.Elapsed.TotalMilliseconds);
+
     return Results.Ok(products);
 });
 
 app.MapGet("/api/products/{id:int}", (int id) =>
 {
+    
     using var span = activitySource.StartActivity("get product by id",ActivityKind.Internal,StatusCode.Ok.ToString());
     span?.SetTag("http.status_code", 200);
     span?.SetTag("http_route", $"api/products/{id}");
@@ -54,8 +78,6 @@ app.MapGet("/api/products/{id:int}", (int id) =>
         throw new Exception("failed to load product");
        
     }
-            
-            
         
         var product = new
         {
