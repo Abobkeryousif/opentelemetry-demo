@@ -15,6 +15,21 @@ builder.Services.AddOpenTelemetry()
     }).WithMetrics(meterProvider=>
     {
         meterProvider.AddMeter("DemoApi")
+        .AddView("api.request.duration",             //view make us to apply configuration for specific generated measurment before export it 
+                new ExplicitBucketHistogramConfiguration
+                {
+                    Boundaries = new double[]
+                    {
+                            5,
+                            10,
+                            25,
+                            50,
+                            100,
+                            250,
+                            500,
+                            1000
+                    }
+                })
         .AddConsoleExporter();
     });
 
@@ -43,7 +58,17 @@ app.MapGet("/api/products", () =>
     using var parentSpan = activitySource.StartActivity("Get products",ActivityKind.Server);
 
     using var childSpan = activitySource.StartActivity("load products", ActivityKind.Internal);
- 
+
+    // trying to make our attribut low cardinality 
+    // cardinality is very importnan concept to be aware of it
+
+
+    var tag = new TagList
+    {
+        {"route", "/api/products" },
+        {"method", "GET" },
+        {"http.status_code", "200" }
+    };
 
 
     var products = new[]
@@ -53,12 +78,14 @@ app.MapGet("/api/products", () =>
         new { Id = 3, Name = "Headphones", Price = 150 }
     };
 
+    
     stopwatch.Stop();
 
-    request_counter.Add(1);
+    request_counter.Add(1,tag);
+
     parentSpan?.SetStatus(Status.Ok);
 
-    request_duration.Record(stopwatch.Elapsed.TotalMilliseconds);
+    request_duration.Record(stopwatch.Elapsed.TotalMilliseconds, tag);
 
     return Results.Ok(products);
 });
