@@ -1,35 +1,40 @@
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Trace;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
 
+//bridge to share app log to opentelemetry
+builder.Logging.AddOpenTelemetry();
+
+
+var resource = ResourceBuilder.CreateDefault().AddService("Otel Demo app");
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing=>
     {
-        tracing
+        tracing.SetResourceBuilder(resource)
         .AddSource("DemoApi")
         .SetSampler(new AlwaysOnSampler()) //very important to keep span on
+        //.AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
         .AddConsoleExporter();
     }).WithMetrics(meterProvider=>
     {
-        meterProvider.AddMeter("DemoApi")
-        .AddView("api.request.duration",             //view make us to apply configuration for specific generated measurment before export it 
-                new ExplicitBucketHistogramConfiguration
-                {
-                    Boundaries = new double[]
-                    {
-                            5,
-                            10,
-                            25,
-                            50,
-                            100,
-                            250,
-                            500,
-                            1000
-                    }
-                })
+        meterProvider
+        .SetResourceBuilder(resource)
+        .AddMeter("DemoApi")
+        //.AddAspNetCoreInstrumentation()
+        //.AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddConsoleExporter();
+    }).WithLogging(loggingProvider =>
+    {
+        loggingProvider
+        .SetResourceBuilder(resource)
         .AddConsoleExporter();
     });
 
@@ -51,7 +56,7 @@ app.MapGet("/", () =>
     return "OpenTelemetry Demo API";
 });
 
-app.MapGet("/api/products", () =>
+app.MapGet("/api/products", (ILogger<Program> logger) =>
 {
 
     var stopwatch = Stopwatch.StartNew();
@@ -70,6 +75,7 @@ app.MapGet("/api/products", () =>
         {"http.status_code", "200" }
     };
 
+    logger.LogInformation("loading products at {Time}", DateTime.UtcNow);
 
     var products = new[]
     {
@@ -87,6 +93,8 @@ app.MapGet("/api/products", () =>
 
     request_duration.Record(stopwatch.Elapsed.TotalMilliseconds, tag);
 
+    logger.LogInformation("Products loaded Successfly. Count = {}", products.Length);
+
     return Results.Ok(products);
 });
 
@@ -95,7 +103,7 @@ app.MapGet("/api/products/{id:int}", (int id) =>
     
     using var span = activitySource.StartActivity("get product by id",ActivityKind.Internal,StatusCode.Ok.ToString());
     span?.SetTag("http.status_code", 200);
-    span?.SetTag("http_route", $"api/products/{id}");
+    span?.SetTag("http_route", $"api/products");  // delete id from route to prevent high cardinality
 
     if (id <= 0)
     {
